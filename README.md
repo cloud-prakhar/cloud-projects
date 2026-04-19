@@ -7,6 +7,7 @@ A collection of hands-on AWS projects designed for students to build real-world 
 | Project | Services | Description |
 |---------|----------|-------------|
 | [Event-Driven Messaging with SNS & SQS](./sqs-sns-iam-messaging/README.md) | SNS, SQS, IAM | Build a fanout messaging system using pub/sub architecture |
+| [Lambda Triggered by SQS with SNS Notification](./lambda-sqs-sns-trigger/README.md) | Lambda, SQS, SNS, IAM, CloudWatch | Build a serverless order-processing pipeline: SQS triggers Lambda, Lambda publishes results to SNS |
 
 ---
 
