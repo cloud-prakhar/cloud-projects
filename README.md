@@ -4,10 +4,23 @@ A collection of hands-on AWS projects designed for students to build real-world 
 
 ## Projects
 
+### Messaging & Queuing
+
 | Project | Services | Description |
 |---------|----------|-------------|
 | [Event-Driven Messaging with SNS & SQS](./sqs-sns-iam-messaging/README.md) | SNS, SQS, IAM | Build a fanout messaging system using pub/sub architecture |
 | [Lambda Triggered by SQS with SNS Notification](./lambda-sqs-sns-trigger/README.md) | Lambda, SQS, SNS, IAM, CloudWatch | Build a serverless order-processing pipeline: SQS triggers Lambda, Lambda publishes results to SNS |
+
+### Lambda Series (Beginner → Advanced)
+
+Work through these four projects in order. Each builds on the previous.
+
+| # | Project | Services | Description |
+|---|---------|----------|-------------|
+| 1 | [Lambda Basics](./lambda-basics/README.md) | Lambda, IAM, CloudWatch | Deploy your first Lambda, understand handlers, invoke via Console/CLI/Boto3, and read CloudWatch Logs |
+| 2 | [Lambda with S3 Event Processing](./lambda-s3-event-processing/README.md) | Lambda, S3, IAM, CloudWatch | Trigger Lambda automatically on S3 uploads; process text/CSV files and write results to a destination bucket |
+| 3 | [Lambda Layers](./lambda-layers/README.md) | Lambda, IAM, CloudWatch | Package third-party libraries (`requests`, `pandas`) as reusable Lambda Layers; attach multiple layers to one function |
+| 4 | [Lambda Troubleshooting & Boto3 Automation](./lambda-troubleshooting-monitoring/README.md) | Lambda, S3, EC2, SQS, CloudWatch, Log Insights | Debug 8 failure scenarios, master Log Insights queries, configure DLQs, and automate EC2/S3/SQS with Boto3 |
 
 ---
 

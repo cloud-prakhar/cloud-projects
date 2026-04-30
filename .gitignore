@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# Lambda build artifacts
+*.zip
+layers/*/build/
+
+# AWS credentials and config (never commit these)
+.aws/
+credentials
+*.pem
+*.key
+
+# Terraform (if used later)
+*.tfstate
+*.tfstate.backup
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+
+# macOS
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary test files
+/tmp/
+response.json
+*.output
+
+# Jupyter notebooks checkpoints (if used)
+.ipynb_checkpoints/
