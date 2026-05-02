@@ -1,0 +1,21 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ecs-advanced-app:local
+    container_name: ecs-advanced-app
+    ports:
+      - "5000:5000"
+    environment:
+      - ENVIRONMENT=local
+      - APP_VERSION=2.0.0
+      - SERVICE_NAME=ecs-advanced-app
+      - AWS_DEFAULT_REGION=us-east-1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped

@@ -50,3 +50,6 @@ response.json
 
 # Jupyter notebooks checkpoints (if used)
 .ipynb_checkpoints/
+
+# Claude Code local files (not for repo consumers)
+CLAUDE.md

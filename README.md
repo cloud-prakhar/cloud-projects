@@ -22,6 +22,15 @@ Work through these four projects in order. Each builds on the previous.
 | 3 | [Lambda Layers](./lambda-layers/README.md) | Lambda, IAM, CloudWatch | Package third-party libraries (`requests`, `pandas`) as reusable Lambda Layers; attach multiple layers to one function |
 | 4 | [Lambda Troubleshooting & Boto3 Automation](./lambda-troubleshooting-monitoring/README.md) | Lambda, S3, EC2, SQS, CloudWatch, Log Insights | Debug 8 failure scenarios, master Log Insights queries, configure DLQs, and automate EC2/S3/SQS with Boto3 |
 
+### ECS & Fargate Series (Beginner → Advanced)
+
+Work through these two projects in order. Project 1 covers fundamentals; Project 2 builds a production-grade deployment.
+
+| # | Project | Services | Description |
+|---|---------|----------|-------------|
+| 1 | [ECS Fargate Basics](./ecs-fargate-basics/README.md) | ECS, Fargate, ECR Public, IAM, CloudWatch | Containerize a Flask app, push to ECR Public, run as a Fargate task — understand ECS fundamentals |
+| 2 | [ECS Fargate Advanced](./ecs-fargate-advanced/README.md) | ECS, Fargate, ECR Public, ALB, VPC, IAM, CloudWatch, Auto Scaling | Production-grade deployment: VPC networking, Application Load Balancer, rolling deployments, Auto Scaling, Container Insights, Docker Compose |
+
 ---
 
 ## How This Repo Is Organized
@@ -31,10 +40,13 @@ Each project lives in its own directory and follows a consistent layout:
 ```
 project-name/
 ├── README.md           # Architecture overview and what you'll build
+├── Dockerfile          # (container projects) How to build the image
+├── docker-compose.yml  # (advanced container projects) Local dev setup
 ├── steps/              # Numbered, sequential step files
 │   ├── 01-*.md
 │   ├── 02-*.md
 │   └── ...
+├── src/                # Application source code
 ├── troubleshooting.md  # Common errors and fixes
 └── challenges.md       # Extra challenges to deepen understanding
 ```
