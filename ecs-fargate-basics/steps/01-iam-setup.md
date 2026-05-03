@@ -62,7 +62,7 @@ The managed policy `AmazonECSTaskExecutionRolePolicy` grants exactly:
 			"Action": "sts:AssumeRole"
 		}
 	]
-}
+	}
 ```
 3. Confirm **Permissions** tab shows `AmazonECSTaskExecutionRolePolicy`.
 4. Copy the **ARN** from the top — you will need it in Step 5.
