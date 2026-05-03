@@ -51,13 +51,19 @@ The managed policy `AmazonECSTaskExecutionRolePolicy` grants exactly:
 2. Confirm the **Trust relationships** tab shows:
    ```json
    {
-     "Effect": "Allow",
-     "Principal": {
-       "Service": "ecs-tasks.amazonaws.com"
-     },
-     "Action": "sts:AssumeRole"
-   }
-   ```
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "Statement1",
+			"Effect": "Allow",
+			"Principal": {
+				"Service": "ecs-tasks.amazonaws.com"
+			},
+			"Action": "sts:AssumeRole"
+		}
+	]
+}
+```
 3. Confirm **Permissions** tab shows `AmazonECSTaskExecutionRolePolicy`.
 4. Copy the **ARN** from the top — you will need it in Step 5.
 
