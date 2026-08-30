@@ -64,6 +64,14 @@ For **each** method you created (GET/POST `/quotes`, GET `/quotes/{id}`, GET `/v
    arn:aws:lambda:us-east-1:123456789012:function:quotes-api:${stageVariables.lambdaAlias}
    ```
 
+   > **The variable name is case-sensitive — and it is the #1 typo in this step.**
+   > `${stageVariables.lambdaAlias}` in the URI and `lambdaAlias` on the stage must match
+   > character for character. `lambdaalias` does **not** resolve to `lambdaAlias`; the
+   > reference silently becomes an empty string and the request fails with a `400` complaining
+   > that `arn:...:function:quotes-api:` (note the bare trailing colon) doesn't match Lambda's
+   > `functionName` pattern. Pick the spelling once and use it in the URI, on every stage, and
+   > in the console Test panel.
+
 4. When you save, the console pops a **"Add permission to Lambda function"** dialog. It can
    only add permission for the *literal* text — which contains `${stageVariables.lambdaAlias}`,
    not a real alias — so click **Cancel** (or let it fail). You'll grant the real permission
@@ -162,6 +170,40 @@ Two things that make these reliable:
 chain works end to end. Keep that command handy — it's your "which version is serving?"
 probe for the next three steps.
 
+### Don't use the console **Test** button from here on
+
+Step 3.3 had you test a method with the console's **Test** tab. That stops being a valid smoke
+test the moment the integration URI contains a stage variable — and it's worth understanding
+why, because the failure looks like a broken API.
+
+The Test tab invokes the method **outside any stage**. You can see it in the execution log it
+prints: `"stage":"test-invoke-stage"`, a synthetic stage that exists only for that call. No
+stage means no stage variables, so `${stageVariables.lambdaAlias}` resolves to nothing and you
+get:
+
+```
+Endpoint request URI: .../function:quotes-api:/invocations     ← empty qualifier
+Status: 400   "1 validation error detected: Value 'arn:aws:lambda:...:function:quotes-api:'
+               at 'functionName' failed to satisfy constraint: ..."
+```
+
+Your API is fine; the test harness just isn't carrying the variable. Two ways forward:
+
+- **Preferred — test through the stage:** `curl "$API/version"`. This exercises the real path
+  (stage → variable → alias → version), which is exactly what Steps 5–7 change.
+- **If you want the Test tab anyway:** fill in its **Stage variables** row first — name
+  `lambdaAlias`, value `live`. They're separate name/value boxes: no `=`, no spaces, and the
+  name must match the case in your URI. The same call from the CLI:
+
+  ```bash
+  aws apigateway test-invoke-method --rest-api-id $API_ID --resource-id <RESOURCE_ID> \
+    --http-method GET --path-with-query-string /version \
+    --stage-variables lambdaAlias=live --region $REGION
+  ```
+
+Either way, confirm the fix in the log: the `Endpoint request URI` line should read
+`.../function:quotes-api:live/invocations`, with the alias filled in.
+
 ### If a command prints nothing or an error
 
 Make the status code visible — this turns a silent failure into a diagnosis:
@@ -174,6 +216,7 @@ curl -i "$API/version"             # -i shows the HTTP status line + headers
 |---|---|---|
 | `{"message":"Missing Authentication Token"}` / `403` | Path or stage wrong — no route matched | Confirm the URL ends `/prod` **and** has the resource (`/version`, `/quotes`). See [troubleshooting.md](../troubleshooting.md). |
 | `{"message":"Internal server error"}` / `500` | Route matched but invoking the alias failed | Add the `live` alias invoke permission (4.2). |
+| `1 validation error detected: ...'functionName'` / `400` | The stage variable resolved to **empty** — misspelled/miscased name, variable missing from the stage, or you used the console **Test** tab | Match the case exactly (`lambdaAlias`), or supply the variable in the Test panel. See above and [troubleshooting.md](../troubleshooting.md). |
 | `curl: (6) Could not resolve host` | `API` unset or has a typo | Re-check the `API=` line; it must be one line, no spaces around `=`. |
 | Totally empty, exit code 0 | You used `-s` and hit an error | Drop `-s`, or add `-i` as above. |
 
@@ -186,6 +229,7 @@ curl -i "$API/version"             # -i shows the HTTP status line + headers
 - [ ] API Gateway has `lambda:InvokeFunction` permission on the **`live`** alias
 - [ ] Stage **`prod`** exists with stage variable `lambdaAlias=live`
 - [ ] `curl $API/version` returns `{"version":"1.0.0"}`
+- [ ] You know why the console **Test** tab returns `400` here, and how to feed it the stage variable
 
 ---
 

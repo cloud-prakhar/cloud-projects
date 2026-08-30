@@ -65,6 +65,11 @@ Before deploying, use the built-in tester:
 
 This runs the integration without a public URL yet — handy for catching wiring mistakes.
 
+> **Enjoy the Test button while it works.** In Step 4 you'll repoint the integration at a Lambda
+> alias through a **stage variable**, and the Test tab invokes methods *outside* any stage — so
+> from then on it returns a `400` validation error unless you hand it the stage variable
+> yourself. Step 4 explains why and what to use instead.
+
 ---
 
 ## 3.4 AWS CLI (Alternative — minimal version)

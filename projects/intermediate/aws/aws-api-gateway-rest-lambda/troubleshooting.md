@@ -27,6 +27,80 @@ aws lambda add-permission --function-name quotes-api --qualifier live \
 
 ---
 
+### `400 BadRequestException` — `1 validation error detected: Value 'arn:aws:lambda:…:function:quotes-api:' at 'functionName' failed to satisfy constraint`
+
+The tell-tale detail is the **bare trailing colon** in that ARN: `…:function:quotes-api:` with
+nothing after it.
+
+**Cause:** the stage variable in the integration URI resolved to an **empty string**, so
+API Gateway sent Lambda a qualifier-less-but-colon-terminated ARN, and Lambda rejected it on
+regex validation *before your function was ever invoked*. The variable resolves to empty in
+exactly three situations:
+
+| Situation | What went wrong |
+|---|---|
+| Name **case** mismatch | The URI says `${stageVariables.lambdaAlias}` but the variable is defined as `lambdaalias` (or vice-versa). Stage variable names are **case-sensitive** and there is no fallback. |
+| Variable **not set** on the stage | The URI references `lambdaAlias`, but the `prod` stage has no such variable (e.g. a stage created without `--variables`). |
+| Tested from the **console Test tab** | The Test tab invokes the method *outside any stage* (see the log line `"stage":"test-invoke-stage"`), so **no** stage variables exist unless you type them into the Test panel yourself. |
+
+**Diagnose:** the execution log tells you which one, in two lines. Look at the
+`Endpoint request body after transformations` line for what API Gateway actually resolved:
+
+```
+"stageVariables":{"lambdaalias":"live"}      ← the name that was supplied
+```
+
+and the `Endpoint request URI` line for the result:
+
+```
+.../function:quotes-api:/invocations         ← empty  →  broken
+.../function:quotes-api:live/invocations     ← resolved  →  correct
+```
+
+If the key in `stageVariables` doesn't character-for-character match the name inside
+`${stageVariables.…}` in your URI, that's your bug.
+
+**Fix:**
+
+1. **Check the URI's spelling** against the stage's variable — both must be `lambdaAlias`:
+
+   ```bash
+   REGION=us-east-1
+   API_ID=<your-api-id>
+
+   aws apigateway get-integration --rest-api-id $API_ID \
+     --resource-id <RESOURCE_ID> --http-method GET --region $REGION --query uri --output text
+   aws apigateway get-stage --rest-api-id $API_ID --stage-name prod \
+     --region $REGION --query variables
+   ```
+
+2. **If you're using the console Test tab**, fill in its **Stage variables** row — name
+   `lambdaAlias`, value `live` — with no `=` and no spaces (they're separate name/value boxes).
+   Leaving it blank *always* produces this error, even when `prod` is perfectly configured.
+   The CLI equivalent, useful for confirming it from a terminal:
+
+   ```bash
+   aws apigateway test-invoke-method --rest-api-id $API_ID --resource-id <RESOURCE_ID> \
+     --http-method GET --path-with-query-string /version \
+     --stage-variables lambdaAlias=live --region $REGION
+   ```
+
+   Drop `--stage-variables` from that command and you reproduce the 400 on demand.
+
+3. **If the stage is missing the variable**, add it (no redeploy needed):
+
+   ```bash
+   aws apigateway update-stage --rest-api-id $API_ID --stage-name prod --region $REGION \
+     --patch-operations op=replace,path=/variables/lambdaAlias,value=live
+   ```
+
+> **`400` vs `500` — read the status code first.** A `400` with this validation message means
+> the variable never resolved (spelling / missing / no stage). A `500 Internal server error`
+> means it resolved fine but API Gateway lacks **invoke permission** on the alias it resolved to
+> (previous entry). They look similar in the console and have completely different fixes.
+
+---
+
 ### Changes to the API don't show up at the invoke URL
 
 **Cause:** You edited resources/methods/integrations but didn't **redeploy**. A REST API only
@@ -34,6 +108,13 @@ serves what's in the deployment attached to the stage.
 
 **Fix:** **Deploy API → select the `prod` stage → Deploy**. (Stage *variable* changes take
 effect immediately and do **not** need a redeploy — only structural changes do.)
+
+> **Give a redeploy ~1–2 minutes to propagate.** A `curl` fired seconds after
+> `create-deployment` can still be served by the *previous* deployment — long enough to make you
+> think a fix didn't work (or that a deliberate break "passed"). If a change seems not to have
+> landed, wait and re-run the request before changing anything else. Redeploying an existing
+> stage without `--variables` keeps its stage variables intact, so you don't need to re-pass them
+> each time.
 
 ---
 
