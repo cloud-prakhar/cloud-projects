@@ -23,10 +23,26 @@ SQL join, now an explicit cross-table read. This is why its role (Step 3) has re
 
 ## 5.2 Package + Create
 
+`orders.zip` is **not** in the repo (`*.zip` is git-ignored) — you create it here from
+`src/orders/handler.py`. Run this from the **project root**
+(`projects/advanced/aws/aws-monolith-to-serverless-migration/`). If you're still inside
+`src/catalog/` from Step 4, run `cd ../..` first — otherwise `cd src/orders` fails with
+`No such file or directory` and no zip is produced.
+
 ```bash
 cd src/orders
 zip orders.zip handler.py
+ls -l orders.zip
+unzip -l orders.zip
 ```
+
+`unzip -l` must list `handler.py` at the **top level** of the archive (not
+`src/orders/handler.py`) — Lambda resolves `handler.handler` as *file* `handler.py`, *function*
+`handler`, from the zip root.
+
+> **WSL / Windows users:** the Console's file picker runs in Windows, so browse to the WSL path
+> (`\\wsl$\<distro>\home\<you>\...\src\orders\orders.zip`), or run `explorer.exe .` from
+> `src/orders` to open that folder in Explorer.
 
 ### Console
 

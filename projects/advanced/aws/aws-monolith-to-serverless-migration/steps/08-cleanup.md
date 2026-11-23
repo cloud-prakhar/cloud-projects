@@ -57,9 +57,11 @@ aws iam delete-role --role-name BookstoreOrdersRole
   aws ec2 wait instance-terminated --instance-ids <id>
   aws ec2 delete-security-group --group-id <sg-id>
   ```
-- Delete the **EC2 instance role + instance profile** if you created one in Step 1.6 for
-  Session Manager. An instance profile has to be emptied before it can be deleted, and a role
-  has to have its policies detached — so the order matters:
+- Delete the **EC2 instance role + instance profile** (`BookstoreMonolithRole`, Step 1.2). An
+  instance profile has to be emptied before it can be deleted. A role must have its managed
+  policies detached **and** its inline policies (Step 2's `BookstoreMigrationWrite`, Step 7's
+  `BookstoreSnapshotWrite`) deleted. Otherwise `delete-role` fails with `DeleteConflict: must
+  delete policies first`:
 
   ```bash
   aws iam remove-role-from-instance-profile \
@@ -67,6 +69,8 @@ aws iam delete-role --role-name BookstoreOrdersRole
   aws iam delete-instance-profile --instance-profile-name BookstoreMonolithRole
   aws iam detach-role-policy --role-name BookstoreMonolithRole \
     --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+  aws iam delete-role-policy --role-name BookstoreMonolithRole --policy-name BookstoreMigrationWrite
+  aws iam delete-role-policy --role-name BookstoreMonolithRole --policy-name BookstoreSnapshotWrite
   aws iam delete-role --role-name BookstoreMonolithRole
   ```
 - Delete the CloudWatch log groups `/aws/lambda/bookstore-catalog` and
@@ -77,6 +81,24 @@ aws iam delete-role --role-name BookstoreOrdersRole
 ```bash
 aws logs delete-log-group --log-group-name /aws/lambda/bookstore-catalog
 aws logs delete-log-group --log-group-name /aws/lambda/bookstore-orders
+
+BKT=bookstore-monolith-snapshot-$(aws sts get-caller-identity --query Account --output text)
+aws s3 rm s3://$BKT --recursive
+aws s3api delete-bucket --bucket $BKT
+```
+
+### Verify nothing is left
+
+Every line below should print empty:
+
+```bash
+aws apigatewayv2 get-apis --query "Items[?Name=='bookstore-api'].ApiId" --output text
+aws lambda list-functions --query "Functions[?starts_with(FunctionName,'bookstore')].FunctionName" --output text
+aws dynamodb list-tables --query "TableNames[?contains(['Books','Orders'],@)]" --output text
+aws iam list-roles --query "Roles[?starts_with(RoleName,'Bookstore')].RoleName" --output text
+aws iam list-instance-profiles --query "InstanceProfiles[?starts_with(InstanceProfileName,'Bookstore')].InstanceProfileName" --output text
+aws ec2 describe-security-groups --filters Name=group-name,Values=bookstore-monolith-sg --query "SecurityGroups[].GroupId" --output text
+aws logs describe-log-groups --log-group-name-prefix /aws/lambda/bookstore --query "logGroups[].logGroupName" --output text
 ```
 
 ---

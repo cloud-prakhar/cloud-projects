@@ -51,7 +51,7 @@ comm -23 /tmp/sqlite_ids.txt /tmp/ddb_ids.txt
 An empty result means zero data loss and you're safe to retire the box. If ids *do* appear,
 re-run the exporter and check its output for errors before going any further.
 
-> **Why reconcile twice?** Between your first export (Step 2) and cutover (Step 6), the
+> **Why reconcile twice?** Between your first export (Step 2) and the `/orders*` cutover (Step 6, Vine 2), the
 > monolith may have taken more orders. The final idempotent re-export guarantees **zero data
 > loss** — the cardinal rule of any migration.
 
@@ -63,11 +63,30 @@ re-run the exporter and check its output for errors before going any further.
 
 ## 7.2 Take a final snapshot (safety net)
 
-Before you delete anything, keep a copy of the monolith's data in case you must roll back:
+Before you delete anything, keep a copy of the monolith's data in case you must roll back.
+The instance role can't write S3 yet (you'd get `AccessDenied … s3:PutObject`), so first create
+a bucket and grant **only** `PutObject` on one prefix. Do this from your laptop:
+
+```bash
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+BKT=bookstore-monolith-snapshot-${ACCOUNT_ID}
+aws s3api create-bucket --bucket $BKT
+cat > snapshot-policy.json <<JSON
+{ "Version": "2012-10-17",
+  "Statement": [{ "Effect": "Allow", "Action": "s3:PutObject",
+    "Resource": "arn:aws:s3:::${BKT}/monolith-final/*" }] }
+JSON
+aws iam put-role-policy --role-name BookstoreMonolithRole \
+  --policy-name BookstoreSnapshotWrite --policy-document file://snapshot-policy.json
+```
+
+| Permission | Service | Why It's Needed |
+|------------|---------|-----------------|
+| `s3:PutObject` on `<bucket>/monolith-final/*` | S3 | Upload the final `bookstore.db`, and nothing else: no read, list, or delete |
 
 ```bash
 # on the EC2 box — copy the SQLite file somewhere durable
-aws s3 cp bookstore.db s3://<your-bucket>/monolith-final/bookstore.db
+aws s3 cp bookstore.db s3://bookstore-monolith-snapshot-<account-id>/monolith-final/bookstore.db
 ```
 
 Optionally create an **AMI** of the instance (EC2 → Actions → Image and templates → Create

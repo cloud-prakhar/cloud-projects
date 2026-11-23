@@ -35,6 +35,8 @@ project, so the symptoms are the exact strings you'll see.
 - HTTP_PROXY integration rejected at creation
 - Will the catch-all swallow migrated routes?
 - Parity check fails: `price` comes back as a string
+- After Vine 2, an earlier order returns `404` (route moved, data didn't yet)
+- Vine applied but `curl` still shows `monolith-1.0` (propagation)
 
 **Steps 7–8 — decommission and cleanup**
 - Reconciliation: DynamoDB has more orders than SQLite
@@ -63,6 +65,84 @@ in `app.py`. If you used SSM-only (no SSH), reach it via Session Manager + `curl
 
 **Fix:** Convert via string — `Decimal(str(row["price"]))`, as the Step 2 script does. Never
 `Decimal(float_value)` directly (that carries the float's imprecision).
+
+---
+
+### Packaging: can't find `orders.zip` / `catalog.zip`, or `cd src/orders: No such file or directory`
+
+**Cause:** The zips aren't in the repo (`*.zip` is git-ignored). You build them yourself in
+Step 4.2 / 5.2. The `cd src/...` commands are relative to the **project root**, so if you're
+still in `src/catalog/` from Step 4, `cd src/orders` fails and `zip` never runs.
+
+**Fix:** Go back to the project root (`cd ../..` from `src/catalog`), then
+`cd src/orders && zip orders.zip handler.py`. Run `unzip -l orders.zip` to check that
+`handler.py` sits at the top level of the zip. If it's nested (e.g. `src/orders/handler.py`),
+Lambda returns `Runtime.ImportModuleError: No module named 'handler'`.
+
+---
+
+### Data migration: `AccessDeniedException … dynamodb:BatchWriteItem` on the EC2 box
+
+**Cause:** `BookstoreMonolithRole` only has `AmazonSSMManagedInstanceCore`. `batch_writer()`
+needs `dynamodb:BatchWriteItem`, and the script's final count needs `dynamodb:Scan`.
+
+**Fix:** Add the `BookstoreMigrationWrite` inline policy from Step 2.3. Wait about 10 seconds
+for IAM to propagate, then re-run `migrate_data.py`. It's idempotent.
+
+---
+
+### Step 7: `sqlite3: command not found` / `s3 cp … AccessDenied`
+
+**Cause:** Amazon Linux 2023 doesn't ship the `sqlite3` command. Separately, the instance role
+has no S3 permissions.
+
+**Fix:** Run `sudo dnf install -y sqlite` (Step 1.3 now includes it), and add the
+`BookstoreSnapshotWrite` policy from Step 7.2 before running `aws s3 cp`.
+
+---
+
+### Orders: `POST /orders` through the API returns `500`, but the Lambda console test returns `400`/`201`
+
+**Symptom:** `curl -X POST $BASE/orders -d '{"book_id":"…"}'` returns
+`{"message":"Internal Server Error"}`. The logs show `JSONDecodeError: Expecting value`.
+
+**Cause:** Without a JSON `content-type`, HTTP API **base64-encodes** the body and sets
+`isBase64Encoded: true`, so a handler that `json.loads` the raw body crashes. The monolith
+(`get_json(force=True)`) accepted the same request, so this is a parity break.
+
+**Fix:** The shipped `src/orders/handler.py` decodes base64 bodies and returns `400` for
+non-JSON. Redeploy it if you wrote your own handler
+(`zip orders.zip handler.py && aws lambda update-function-code --function-name bookstore-orders --zip-file fileb://orders.zip`).
+Clients should also send `-H 'content-type: application/json'`.
+
+---
+
+### After Vine 2, `GET /orders/{id}` returns `404` for an order you placed earlier
+
+**Cause:** Expected. You placed that order during Vine 0 or Vine 1, when `/orders*` still went
+through the catch-all to the monolith, so it lives in **SQLite only**. Moving the route didn't
+move the data.
+
+**Fix:** None needed in Step 6. Step 7.1 re-runs the idempotent exporter. After that, the same
+`curl $BASE/orders/<id>` returns `200`.
+
+---
+
+### Vine just applied but `curl` still shows `monolith-1.0`
+
+**Cause:** Auto-deploy takes a few seconds to go live after `create-route`/`delete-route`.
+
+**Fix:** Wait ~5 seconds and retry. If it persists, check that the route exists
+(`aws apigatewayv2 get-routes --api-id $API_ID --query "Items[].RouteKey"`) and has a target.
+
+---
+
+### Cleanup: `DeleteConflict … must delete policies first` deleting `BookstoreMonolithRole`
+
+**Cause:** The role still has inline policies (`BookstoreMigrationWrite`,
+`BookstoreSnapshotWrite`). `detach-role-policy` only removes *managed* policies.
+
+**Fix:** Run `aws iam delete-role-policy` for each inline policy (Step 8.5), then `delete-role`.
 
 ---
 
@@ -162,7 +242,7 @@ Lambda proxy). Check the function's CloudWatch logs for the actual `KeyError`.
 
 ### Parity check fails: `price` comes back as a string (`"39.99"` not `39.99`)
 
-**Symptom:** Step 6.4 says the monolith and API responses should match, but they don't:
+**Symptom:** Step 6.7 says the monolith and API responses should match, but they don't:
 
 ```
 monolith: {"price": 39.99,   "title": "The Pragmatic Programmer"}
@@ -292,7 +372,7 @@ Counts must match. This is exactly why Step 7 reconciles twice.
 
 ### HTTP_PROXY catch-all to the monolith returns `503 Service Unavailable`
 
-**Symptom:** The optional catch-all route from Step 6.3 returns
+**Symptom:** The catch-all route from Step 6.3 (Vine 0) returns
 `{"message":"Service Unavailable"}` (503), even though you can `curl` the monolith fine from
 your own laptop.
 
@@ -308,14 +388,14 @@ wrong.
 | `404 {"message":"Not Found"}` | The **route didn't match**. Your catch-all isn't configured. |
 | `503 {"message":"Service Unavailable"}` | The route **did** match and API Gateway **tried** to connect — it's a network/reachability problem, not a routing one. |
 
-**Fix:** API Gateway publishes **no fixed IP range** for HTTP_PROXY egress, so there's no narrow
-CIDR you can allow — reaching a public EC2 listener this way means opening port 5000 broadly.
-Pick one:
+**Fix:** Pick one:
 
-- **Skip the catch-all.** The four explicit Lambda routes complete the migration on their own.
-  This is the recommended path for the lab.
-- **Open the port** on the throwaway lab instance you terminate in Step 7 — acceptable there,
-  but never a pattern to carry into production.
+- **Skip Vine 0 and Vine 3.** The four Lambda routes still complete the migration; the vines just become checkpoints instead of a live cutover.
+- **Allow the published API Gateway ranges.** AWS lists them in `ip-ranges.json` under service
+  `API_GATEWAY` (about 16 CIDRs for `us-east-1`). Step 6.3 has a copy-paste command that adds
+  them to the security group on port 5000. Tested: the catch-all goes from `503` to `200`
+  without opening `0.0.0.0/0`. These ranges are shared by all API Gateway customers and change
+  over time, so this is fine for the throwaway lab box but is not access control.
 - **Do it properly with a VPC Link** (private integration to an ALB/NLB in your VPC), so the
   monolith needs no public listener at all. This is the production-safe shape.
 

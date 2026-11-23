@@ -215,7 +215,7 @@ monolith-to-serverless-migration/
 
 | Requirement | Details |
 |-------------|---------|
-| AWS account | Console + CLI for EC2, Lambda, API Gateway, DynamoDB, IAM, CloudWatch |
+| AWS account | Console + CLI for EC2, Lambda, API Gateway, DynamoDB, IAM, CloudWatch, S3 (final snapshot), SSM Session Manager |
 | AWS CLI | `aws --version` → 2.x, configured for **us-east-1** |
 | Python 3.12+ | To run `test_handlers.py` and the monolith locally |
 | Key pair / SSH or SSM | To reach the EC2 monolith in Step 1 |
@@ -232,7 +232,7 @@ monolith-to-serverless-migration/
 | 3 | `03-iam-roles.md` | One least-privilege execution role per function |
 | 4 | `04-catalog-lambda.md` | `bookstore-catalog` for `GET /books*` |
 | 5 | `05-orders-lambda.md` | `bookstore-orders` for `POST /orders`, `GET /orders/{id}` |
-| 6 | `06-http-api-strangler.md` | HTTP API front door; migrate `/books*` then `/orders*` |
+| 6 | `06-http-api-strangler.md` | HTTP API front door; catch-all → monolith, then strangle `/books*`, `/orders*`, remove catch-all |
 | 7 | `07-decommission-monolith.md` | Confirm nothing uses EC2, then stop/terminate it |
 | 8 | `08-cleanup.md` | Delete API, functions, tables, roles, EC2, logs |
 

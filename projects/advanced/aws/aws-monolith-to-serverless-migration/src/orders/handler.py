@@ -8,6 +8,7 @@ Backed by the DynamoDB 'Orders' table. It validates the book exists by reading
 the 'Books' table (catalog), which is why its role gets read access to Books too.
 """
 
+import base64
 import json
 import os
 from decimal import Decimal
@@ -35,6 +36,19 @@ def _resp(status, body):
             "body": json.dumps(body, default=_json_default)}
 
 
+def _parse_body(event):
+    raw = event.get("body") or "{}"
+    # HTTP API base64-encodes bodies whose content-type isn't JSON/text (e.g. curl -d
+    # without -H 'content-type: application/json'); the monolith accepted those.
+    if event.get("isBase64Encoded"):
+        raw = base64.b64decode(raw).decode("utf-8")
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) else None
+
+
 def handler(event, context):
     method = event["requestContext"]["http"]["method"]
     order_id = (event.get("pathParameters") or {}).get("id")
@@ -44,7 +58,9 @@ def handler(event, context):
         return _resp(200, item) if item else _resp(404, {"error": "not found"})
 
     if method == "POST":
-        body = json.loads(event.get("body") or "{}")
+        body = _parse_body(event)
+        if body is None:
+            return _resp(400, {"error": "body must be JSON"})
         if not _books.get_item(Key={"id": body.get("book_id", "")}).get("Item"):
             return _resp(400, {"error": "unknown book_id"})
         new_id = str(uuid.uuid4())

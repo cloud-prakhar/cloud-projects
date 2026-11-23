@@ -33,9 +33,55 @@ serverless attractive. **You can't appreciate the destination until you've felt 
    |------|------|--------|
    | Custom TCP | 5000 | My IP |
    | SSH | 22 | My IP (skip if using SSM) |
-6. **Advanced details → IAM instance profile:** attach a role with
-   `AmazonSSMManagedInstanceCore` if you want Session Manager access (no SSH key needed).
+6. **Advanced details → IAM instance profile:** attach a role named `BookstoreMonolithRole`
+   with `AmazonSSMManagedInstanceCore` if you want Session Manager access (no SSH key needed).
+   Create it first in **IAM → Roles → Create role → AWS service → EC2**. Step 2 and Step 7
+   add two small inline policies to this same role, so the box can write the migrated data
+   and its final snapshot.
 7. **Launch instance.** Note the **Public IPv4** once it's running.
+
+### CLI alternative
+
+```bash
+MYIP=$(curl -s https://checkip.amazonaws.com)
+VPC=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query "Vpcs[0].VpcId" --output text)
+SUBNET=$(aws ec2 describe-subnets --filters Name=vpc-id,Values=$VPC Name=availability-zone,Values=us-east-1a \
+  --query "Subnets[0].SubnetId" --output text)
+AMI=$(aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
+  --query Parameter.Value --output text)
+
+# Instance role for Session Manager (no SSH key, no port 22)
+cat > ec2-trust.json <<'JSON'
+{ "Version": "2012-10-17",
+  "Statement": [{ "Effect": "Allow",
+    "Principal": {"Service": "ec2.amazonaws.com"},
+    "Action": "sts:AssumeRole" }] }
+JSON
+aws iam create-role --role-name BookstoreMonolithRole --assume-role-policy-document file://ec2-trust.json
+aws iam attach-role-policy --role-name BookstoreMonolithRole \
+  --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+aws iam create-instance-profile --instance-profile-name BookstoreMonolithRole
+aws iam add-role-to-instance-profile --instance-profile-name BookstoreMonolithRole \
+  --role-name BookstoreMonolithRole
+
+SG=$(aws ec2 create-security-group --group-name bookstore-monolith-sg \
+  --description "bookstore monolith" --vpc-id $VPC --query GroupId --output text)
+aws ec2 authorize-security-group-ingress --group-id $SG --protocol tcp --port 5000 --cidr $MYIP/32
+
+sleep 10   # a brand-new instance profile takes a few seconds to become usable
+IID=$(aws ec2 run-instances --image-id $AMI --instance-type t3.micro --subnet-id $SUBNET \
+  --security-group-ids $SG --iam-instance-profile Name=BookstoreMonolithRole \
+  --associate-public-ip-address \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=bookstore-monolith}]' \
+  --query "Instances[0].InstanceId" --output text)
+aws ec2 wait instance-running --instance-ids $IID
+IP=$(aws ec2 describe-instances --instance-ids $IID \
+  --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
+echo "IID=$IID  SG=$SG  IP=$IP"   # keep these: Steps 6–8 use them
+```
+
+> Session Manager needs a minute or two after launch before **Connect** works (the SSM agent
+> has to register).
 
 > **If the launch fails with "instance type not supported in your requested Availability
 > Zone":** some AZs don't offer `t3.micro` — `us-east-1e` is the usual culprit. This bites
@@ -57,15 +103,24 @@ serverless attractive. **You can't appreciate the destination until you've felt 
 Connect (`ssh ec2-user@<public-ip>` or **EC2 → Connect → Session Manager**), then:
 
 ```bash
-sudo dnf install -y python3-pip git
+sudo dnf install -y python3-pip git sqlite
 python3 -m pip install --user flask==3.1.0
 
 mkdir -p ~/bookstore && cd ~/bookstore
 # paste src/monolith/app.py here (scp it, or copy-paste into: nano app.py)
 
-python3 app.py
-# * Running on http://0.0.0.0:5000
+nohup python3 app.py > app.log 2>&1 &
+sleep 2 && curl -s localhost:5000/health
+# {"status":"ok","version":"monolith-1.0"}
 ```
+
+> **Why `nohup … &`?** If you run `python3 app.py` in the foreground, the app dies when you
+> close the Session Manager tab, and Steps 2–7 need it alive. **Why `sqlite`?** Amazon Linux
+> 2023 ships the SQLite *library* but not the `sqlite3` command, and Step 7's reconciliation
+> uses that command.
+
+> **If you use Session Manager:** you're logged in as `ssm-user`, not `ec2-user`, so `~` is
+> `/home/ssm-user`. That's fine. Just run every step from the same `~/bookstore` folder.
 
 From your laptop, hit it:
 

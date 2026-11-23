@@ -51,12 +51,46 @@ This is the data half of the migration. On the EC2 box (where `bookstore.db` liv
 small Python exporter that reads SQLite and `put_item`s each row into DynamoDB. **It's
 idempotent** — `put_item` overwrites by key, so re-running is safe.
 
-On `bookstore-monolith` (it already has the data and an instance role; ensure that role can
-write DynamoDB, or run this from your laptop after copying `bookstore.db` down):
+Run it on `bookstore-monolith`, which already has the data. Alternatively, run it from your
+laptop after copying `bookstore.db` down.
+
+**First, let the instance role write the two tables.** `BookstoreMonolithRole` from Step 1
+only has SSM access. Without this policy the script fails with
+`AccessDeniedException … dynamodb:BatchWriteItem`.
+
+| Permission | Service | Why It's Needed |
+|------------|---------|-----------------|
+| `dynamodb:BatchWriteItem`, `PutItem` on `Books`/`Orders` | DynamoDB | `batch_writer()` sends rows as `BatchWriteItem` |
+| `dynamodb:Scan` on `Books`/`Orders` | DynamoDB | The script's final row count, and Step 7's reconciliation scan |
+
+**Console:** IAM → Roles → `BookstoreMonolithRole` → **Add permissions → Create inline policy
+→ JSON**. Paste the policy below (replace `<account>`) and name it `BookstoreMigrationWrite`.
+
+```bash
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+cat > migration-policy.json <<JSON
+{ "Version": "2012-10-17",
+  "Statement": [{ "Effect": "Allow",
+    "Action": ["dynamodb:BatchWriteItem","dynamodb:PutItem","dynamodb:Scan"],
+    "Resource": ["arn:aws:dynamodb:us-east-1:${ACCOUNT_ID}:table/Books",
+                 "arn:aws:dynamodb:us-east-1:${ACCOUNT_ID}:table/Orders"] }] }
+JSON
+aws iam put-role-policy --role-name BookstoreMonolithRole \
+  --policy-name BookstoreMigrationWrite --policy-document file://migration-policy.json
+```
+
+> **Why is this a temporary policy on the *old* box?** The monolith only needs to write
+> DynamoDB during the migration window. It disappears when you delete the role in Step 8.
+> It's scoped to the two tables, with no `Delete*` actions and no `Resource: "*"`.
+
+Then, on the instance:
 
 ```bash
 python3 -m pip install --user boto3
 ```
+
+> A `PythonDeprecationWarning` about Python 3.9 is expected. Amazon Linux 2023's system Python
+> is 3.9, and the warning is harmless for this script.
 
 ```python
 # migrate_data.py  — run once; reads SQLite, writes DynamoDB

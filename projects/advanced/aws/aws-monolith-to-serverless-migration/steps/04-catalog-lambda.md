@@ -24,10 +24,18 @@ gives the front door (Step 6) a serverless option to point `/books*` at.
 
 The handler uses only `boto3` (in the Lambda runtime already), so the zip is just the file:
 
+You create `catalog.zip` yourself — it isn't committed (`*.zip` is git-ignored). Run from the
+**project root** (`projects/advanced/aws/aws-monolith-to-serverless-migration/`):
+
 ```bash
 cd src/catalog
 zip catalog.zip handler.py
+unzip -l catalog.zip
 ```
+
+`handler.py` must sit at the top level of the zip so `handler.handler` resolves. Stay in
+`src/catalog/` for the CLI `create-function` below (`fileb://catalog.zip` is a relative path),
+then `cd ../..` back to the project root before Step 5.
 
 ---
 

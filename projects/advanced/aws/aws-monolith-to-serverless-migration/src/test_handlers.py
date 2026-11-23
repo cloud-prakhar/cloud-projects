@@ -7,6 +7,7 @@ the handlers, so you can prove the routing/logic on your laptop:
     python3 test_handlers.py     # prints PASS/FAIL, no pytest needed
 """
 
+import base64
 import importlib.util
 import json
 import os
@@ -98,6 +99,17 @@ check("GET /orders/{id} returns the order", r["statusCode"] == 200)
 
 r = orders.handler(evt("POST", "/orders", body={"book_id": "ghost"}), None)
 check("POST with unknown book_id returns 400", r["statusCode"] == 400)
+
+b64 = evt("POST", "/orders")
+b64["body"] = base64.b64encode(json.dumps({"book_id": "b1", "qty": 1}).encode()).decode()
+b64["isBase64Encoded"] = True
+r = orders.handler(b64, None)
+check("POST with base64-encoded body (no JSON content-type) returns 201", r["statusCode"] == 201)
+
+bad = evt("POST", "/orders")
+bad["body"] = "not json"
+r = orders.handler(bad, None)
+check("POST with non-JSON body returns 400, not 500", r["statusCode"] == 400)
 
 print(f"\n{_PASS} passed, {_FAIL} failed")
 sys.exit(1 if _FAIL else 0)
